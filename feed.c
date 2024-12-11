@@ -1,10 +1,8 @@
 #include "utils.h"
 
-char FED_FIFO[256];
-
 // Función para enviar el pedido al manager
 int enviarPedidoManager(pedidoStruct *pedido) {
-    int fd = open(MAN_FIFO, O_WRONLY);
+    int fd = open(MAN_PIPE, O_WRONLY);
     if (fd == -1) {
         printf("[ERROR] Failed to open manager pipe.\n");
         return 0;
@@ -20,8 +18,8 @@ int enviarPedidoManager(pedidoStruct *pedido) {
 }
 
 // Función para leer la respuesta del manager
-int leerRespuestaManager(int *resposta) {
-    int fd_feed = open(FED_FIFO, O_RDONLY);
+int leerRespuestaManager(int *resposta,const char *user_fifo ) {
+    int fd_feed = open(user_fifo, O_RDONLY);
     if (fd_feed == -1) {
         printf("[ERROR] Failed to open user pipe.\n");
         return 0;
@@ -37,7 +35,7 @@ int leerRespuestaManager(int *resposta) {
 }
 
 // Función para enviar el nombre de usuario al proceso manager para su validación
-int enviaUser(char *username) {
+int enviaUser(char *username, const char *user_fifo) {
     pedidoStruct pedido;
     int resposta;  // Cambiado a int en lugar de respostaStruct
 
@@ -46,7 +44,7 @@ int enviaUser(char *username) {
     strncpy(pedido.username, username, sizeof(pedido.username) - 1);
     pedido.username[sizeof(pedido.username) - 1] = '\0';
     pedido.tipo = 2;
-    snprintf(pedido.FIFO, sizeof(pedido.FIFO), "/tmp/client_fifo_%d", pedido.pid);
+    snprintf(pedido.FIFO, sizeof(pedido.FIFO), FEED_PIPE , pedido.pid);
 
     // Enviar el pedido al proceso manager
     if (!enviarPedidoManager(&pedido)) {
@@ -54,7 +52,7 @@ int enviaUser(char *username) {
     }
 
     // Esperar la respuesta del proceso manager
-    if (!leerRespuestaManager(&resposta)) {
+    if (!leerRespuestaManager(&resposta, user_fifo)) {
         return 0;  
     }
 
@@ -81,7 +79,7 @@ void commSubscribe(char *topico) {
     pedido.topico[sizeof(pedido.topico) - 1] = '\0';
 
     // Abrir el FIFO del manager en modo escritura no bloqueante
-    int fd = open(MAN_FIFO, O_WRONLY | O_NONBLOCK);
+    int fd = open(MAN_PIPE, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
         // Manejar errores de apertura
         perror("[ERROR] Failed to open manager pipe");
@@ -124,7 +122,7 @@ void commUnsubscribe(char *topico) {
     pedido.topico[sizeof(pedido.topico) - 1] = '\0';
 
     // Abrir el FIFO del manager en modo escritura no bloqueante
-    int fd = open(MAN_FIFO, O_WRONLY | O_NONBLOCK);
+    int fd = open(MAN_PIPE, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
         // Manejar errores de apertura
         perror("[ERROR] Failed to open manager pipe");
@@ -173,7 +171,7 @@ void commMsg(char *topico, int duracao, char *menssagem, char *username) {
     sendMsg.pid = getpid();
 
     // Apertura del FIFO del manager en modo escritura no bloqueante
-    int fd = open(MAN_FIFO, O_WRONLY | O_NONBLOCK);
+    int fd = open(MAN_PIPE, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
         // Mensaje de error si el pipe no pudo abrirse
         perror("[ERROR] Failed to open manager pipe");
@@ -202,12 +200,12 @@ void commMsg(char *topico, int duracao, char *menssagem, char *username) {
 }
 
 // Comando de exit.
-void commExit(const char *FED_FIFO) {
+void commExit(const char *user_fifo) {
     // Estructura para el mensaje de salida
     pedidoStruct pedido = { .pid = getpid(), .tipo = 3 };
 
     // Apertura del pipe del manager en modo escritura no bloqueante
-    int fd = open(MAN_FIFO, O_WRONLY | O_NONBLOCK);
+    int fd = open(MAN_PIPE, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
         // Mensaje de error si el pipe no pudo abrirse
         printf("[ERROR] Could not open manager pipe.\n");
@@ -233,10 +231,10 @@ void commExit(const char *FED_FIFO) {
     close(fd);
 
     // Eliminar el FIFO del usuario
-    if (unlink(FED_FIFO) == 0) {
+    if (unlink(user_fifo) == 0) {
         printf("User pipe for the session has been removed successfully.\n");
     } else {
-        printf("[WARNING] Could not remove PIPE: %s\n", FED_FIFO);
+        printf("[WARNING] Could not remove PIPE: %s\n", user_fifo);
     }
 
     printf("Session ended successfully\n");
@@ -254,10 +252,11 @@ int main(int argc, char *argv[]) {
     }
 
     char *username = argv[1];
-    snprintf(FED_FIFO, sizeof(FED_FIFO), "/tmp/client_fifo_%d", getpid());
+    char user_fifo[256];
+    snprintf(user_fifo, sizeof(user_fifo), FEED_PIPE, getpid());
 
     // Crear el FIFO para el cliente
-    if (mkfifo(FED_FIFO, 0666) == -1 && errno != EEXIST) {
+    if (mkfifo(user_fifo, 0666) == -1 && errno != EEXIST) {
         printf("[ERROR] Failed to create user pipe.\n");
         return 1;
     }
@@ -266,13 +265,13 @@ int main(int argc, char *argv[]) {
     printf("Enter the command you want to execute: \n");
 
     // Enviar datos del usuario al manager
-    if (!enviaUser(username)) {
-        unlink(FED_FIFO);
+    if (!enviaUser(username,user_fifo)) {
+        unlink(user_fifo);
         return 1;
     }
 
     // Abrir el pipe del usuario
-    int fd_feed = open(FED_FIFO, O_RDONLY | O_NONBLOCK);
+    int fd_feed = open(user_fifo, O_RDONLY | O_NONBLOCK);
     if (fd_feed == -1) {
         printf("[ERROR] Failed to open user pipe.\n");
         return 1;
@@ -306,7 +305,7 @@ int main(int argc, char *argv[]) {
             switch (command[0]) {
                 /*case 't':
                     if (strcmp(command, "topics") == 0) {
-                        commTopicos(FED_FIFO);
+                        commTopicos(FEED_PIPE);
                     } else {
                         printf("[ERROR] Unknown command!\n");
                     }
@@ -342,7 +341,7 @@ int main(int argc, char *argv[]) {
                     break;
                 case 'e':
                     if (strcmp(command, "exit") == 0) {
-                        commExit(FED_FIFO);
+                        commExit(user_fifo);
                         break;
                     } else {
                         printf("[ERROR] Unknown command!\n");
@@ -361,7 +360,7 @@ int main(int argc, char *argv[]) {
                 if(msg.fechado == 1) {
                     printf("Manager terminated!! Exiting...\n");
                     fflush(stdout);
-                    unlink(FED_FIFO);
+                    unlink(user_fifo);
                     break;
                 }
                 if(msg.bloqueado == 1) {
