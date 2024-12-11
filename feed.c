@@ -1,15 +1,15 @@
 #include "utils.h"
 
 // Función para enviar el pedido al manager
-int enviarPedidoManager(pedidoStruct *pedido) {
+int sendManager(Request *request) {
     int fd = open(MAN_PIPE, O_WRONLY);
     if (fd == -1) {
         printf("[ERROR] Failed to open manager pipe.\n");
         return 0;
     }
 
-    if (write(fd, pedido, sizeof(*pedido)) == -1) {
-        printf("Failed to send validation request.\n");
+    if (write(fd, request, sizeof(*request)) == -1) {
+        printf("[ERROR] Failed to send validation request.\n");
         close(fd);
         return 0;
     }
@@ -18,208 +18,190 @@ int enviarPedidoManager(pedidoStruct *pedido) {
 }
 
 // Función para leer la respuesta del manager
-int leerRespuestaManager(int *resposta,const char *user_fifo ) {
+int readManager(int *response, const char *user_fifo) {
     int fd_feed = open(user_fifo, O_RDONLY);
     if (fd_feed == -1) {
         printf("[ERROR] Failed to open user pipe.\n");
         return 0;
     }
 
-    if (read(fd_feed, resposta, sizeof(*resposta)) == -1) {
-        printf("\n[ERROR] Failed to read validation response!\n");
+    if (read(fd_feed, response, sizeof(*response)) == -1) {
+        printf("[ERROR] Failed to read validation response!\n");
         close(fd_feed);
         return 0;
     }
     close(fd_feed);
-    return 1;  // Respuesta leída correctamente
+    return 1;  // Respuesta leida correctamente
 }
 
 // Función para enviar el nombre de usuario al proceso manager para su validación
-int enviaUser(char *username, const char *user_fifo) {
-    pedidoStruct pedido;
-    int resposta;  // Cambiado a int en lugar de respostaStruct
+int sendUser(char *username, const char *user_fifo) {
+    Request request;
+    int response;  
 
-    // Preparar la estructura de pedido con el pid y el nombre de usuario
-    pedido.pid = getpid();
-    strncpy(pedido.username, username, sizeof(pedido.username) - 1);
-    pedido.username[sizeof(pedido.username) - 1] = '\0';
-    pedido.tipo = 2;
-    snprintf(pedido.FIFO, sizeof(pedido.FIFO), FEED_PIPE , pedido.pid);
+    // Preparar la estructura de solicitud con el pid y el nombre de usuario
+    request.pid = getpid();
+    strncpy(request.username, username, sizeof(request.username) - 1);
+    request.username[sizeof(request.username) - 1] = '\0';
+    request.type = 2;
+    snprintf(request.FIFO, sizeof(request.FIFO), FEED_PIPE, request.pid);
 
-    // Enviar el pedido al proceso manager
-    if (!enviarPedidoManager(&pedido)) {
+    // Enviar la solicitud al proceso manager
+    if (!sendManager(&request)) {
         return 0;  
     }
 
     // Esperar la respuesta del proceso manager
-    if (!leerRespuestaManager(&resposta, user_fifo)) {
+    if (!readManager(&response, user_fifo)) {
         return 0;  
     }
 
     // Validar la respuesta recibida
-    if (resposta == 0) {
-        printf("\n[ERROR] Username not allowed!\n");
-        return 0;  // El nombre de usuario no está permitido
+    if (response == 0) {
+        printf("[ERROR] Username not allowed!\n");
+        return 0;  
     }
 
     return 1;  // Usuario validado correctamente
 }
 
-
-
-// Subscribe to a topic
-void commSubscribe(char *topico) {
-
-    pedidoStruct pedido = {
+// Suscribirse a un tema
+void subscribe(char *topic) {
+    Request request = {
         .pid = getpid(),
-        .tipo = 0 
+        .type = 0
     };
-    // Copiar el tópico en la estructura, asegurando la terminación nula
-    strncpy(pedido.topico, topico, sizeof(pedido.topico) - 1);
-    pedido.topico[sizeof(pedido.topico) - 1] = '\0';
 
-    // Abrir el FIFO del manager en modo escritura no bloqueante
+    // Copiar el nombre del tema en la estructura, asegurando la terminación nula
+    strncpy(request.topic, topic, sizeof(request.topic) - 1);
+    request.topic[sizeof(request.topic) - 1] = '\0';
+
+    // Abrir el pipe del manager en modo escritura no bloqueante
     int fd = open(MAN_PIPE, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
-        // Manejar errores de apertura
         perror("[ERROR] Failed to open manager pipe");
         return;
     }
 
     // Preparar el buffer para enviar los datos
-    const char *buffer = (const char *)&pedido;
-    ssize_t remaining = sizeof(pedido);
+    const char *buffer = (const char *)&request;
+    ssize_t remaining = sizeof(request);
 
-    // Enviar los datos asegurando la escritura completa
+    // Enviar los datos asegurando que se escriban completamente
     while (remaining > 0) {
         ssize_t written = write(fd, buffer, remaining);
         if (written < 0) {
-            // Manejo de errores durante la escritura
             perror("[ERROR] Failed to send subscription request");
             close(fd); // Cerrar el descriptor en caso de error
             return;
         }
-        buffer += written;  // Avanzar el puntero del buffer
+        buffer += written;   // Avanzar el puntero del buffer
         remaining -= written; // Reducir los bytes restantes
     }
 
-
     close(fd);
-
-
-    printf("Successfully subscribed to topic: %s\n", topico);
+    printf("Successfully subscribed to topic: %s\n", topic);
 }
 
-// Unsubscribe from a topic
-void commUnsubscribe(char *topico) {
- 
-    pedidoStruct pedido = {
+// Cancelar suscripción de un tema
+void unsubscribe(char *topic) {
+    Request request = {
         .pid = getpid(),
-        .tipo = 1 
+        .type = 1
     };
-    // Copiar el tópico en la estructura, asegurando la terminación nula
-    strncpy(pedido.topico, topico, sizeof(pedido.topico) - 1);
-    pedido.topico[sizeof(pedido.topico) - 1] = '\0';
 
-    // Abrir el FIFO del manager en modo escritura no bloqueante
+    // Copiar el nombre del tema en la estructura, asegurando la terminación nula
+    strncpy(request.topic, topic, sizeof(request.topic) - 1);
+    request.topic[sizeof(request.topic) - 1] = '\0';
+
+    // Abrir el pipe del manager en modo escritura no bloqueante
     int fd = open(MAN_PIPE, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
-        // Manejar errores de apertura
         perror("[ERROR] Failed to open manager pipe");
         return;
     }
 
     // Preparar el buffer para enviar los datos
-    const char *buffer = (const char *)&pedido;
-    ssize_t remaining = sizeof(pedido);
+    const char *buffer = (const char *)&request;
+    ssize_t remaining = sizeof(request);
 
-    // Enviar los datos asegurando la escritura completa
+    // Enviar los datos asegurando que se escriban completamente
     while (remaining > 0) {
         ssize_t written = write(fd, buffer, remaining);
         if (written < 0) {
-            // Manejo de errores durante la escritura
             perror("[ERROR] Failed to send unsubscription request");
             close(fd); // Cerrar el descriptor en caso de error
             return;
         }
-        buffer += written;  // Avanzar el puntero del buffer
+        buffer += written;   // Avanzar el puntero del buffer
         remaining -= written; // Reducir los bytes restantes
     }
 
     close(fd);
-
-
-    printf("Successfully unsubscribed from topic: %s\n", topico);
+    printf("Successfully unsubscribed from topic: %s\n", topic);
 }
 
-// Comando msg.
-void commMsg(char *topico, int duracao, char *menssagem, char *username) {
-    // Estructura para el mensaje
-    msgStruct sendMsg;
+// Enviar un mensaje a un tema
+void sendMessage(char *topic, int duration, char *message, char *username) {
+    Message sendMsg;
 
-    // Copiar los valores asegurando la terminación nula de las cadenas
-    strncpy(sendMsg.topico, topico, sizeof(sendMsg.topico) - 1);
-    sendMsg.topico[sizeof(sendMsg.topico) - 1] = '\0';
+    // Copiar los valores asegurando que las cadenas estén terminadas en nulo
+    strncpy(sendMsg.topic, topic, sizeof(sendMsg.topic) - 1);
+    sendMsg.topic[sizeof(sendMsg.topic) - 1] = '\0';
 
-    strncpy(sendMsg.menssagem, menssagem, sizeof(sendMsg.menssagem) - 1);
-    sendMsg.menssagem[sizeof(sendMsg.menssagem) - 1] = '\0';
+    strncpy(sendMsg.message, message, sizeof(sendMsg.message) - 1);
+    sendMsg.message[sizeof(sendMsg.message) - 1] = '\0';
 
-    strncpy(sendMsg.nome, username, sizeof(sendMsg.nome) - 1);
-    sendMsg.nome[sizeof(sendMsg.nome) - 1] = '\0';
+    strncpy(sendMsg.name, username, sizeof(sendMsg.name) - 1);
+    sendMsg.name[sizeof(sendMsg.name) - 1] = '\0';
 
-    sendMsg.duracao = duracao;
+    sendMsg.duration = duration;
     sendMsg.pid = getpid();
 
-    // Apertura del FIFO del manager en modo escritura no bloqueante
+    // Abrir el pipe del manager en modo escritura no bloqueante
     int fd = open(MAN_PIPE, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
-        // Mensaje de error si el pipe no pudo abrirse
         perror("[ERROR] Failed to open manager pipe");
-        exit(EXIT_FAILURE); // Salida segura en caso de error
+        exit(EXIT_FAILURE);
     }
 
-    // Preparar puntero al buffer para la escritura
+    // Preparar el buffer para enviar los datos
     const char *buffer = (const char *)&sendMsg;
     ssize_t remaining = sizeof(sendMsg);
 
-    // Enviar los datos asegurando que se escribe todo el mensaje
+    // Enviar los datos asegurando que se escriban completamente
     while (remaining > 0) {
         ssize_t written = write(fd, buffer, remaining);
         if (written < 0) {
-            // Manejo de errores durante la escritura
             perror("[ERROR] Failed to send message");
-            close(fd); // Asegurar el cierre del descriptor
-            exit(EXIT_FAILURE); // Salida segura en caso de error
+            close(fd); // Cerrar el descriptor en caso de error
+            exit(EXIT_FAILURE);
         }
-        buffer += written;  // Avanzar el puntero del buffer
+        buffer += written;   // Avanzar el puntero del buffer
         remaining -= written; // Reducir los bytes restantes
     }
 
-    // Cerrar el descriptor del pipe tras escribir
     close(fd);
 }
 
-// Comando de exit.
-void commExit(const char *user_fifo) {
-    // Estructura para el mensaje de salida
-    pedidoStruct pedido = { .pid = getpid(), .tipo = 3 };
+// Salir de la sesión
+void endSession(const char *user_fifo) {
+    Request request = { .pid = getpid(), .type = 3 };
 
-    // Apertura del pipe del manager en modo escritura no bloqueante
+    // Abrir el pipe del manager en modo escritura no bloqueante
     int fd = open(MAN_PIPE, O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
-        // Mensaje de error si el pipe no pudo abrirse
         printf("[ERROR] Could not open manager pipe.\n");
         return;
     }
 
     // Enviar el mensaje de salida asegurando que todos los bytes se escriban
-    ssize_t remaining = sizeof(pedido);
-    const char *buffer = (const char *)&pedido;
+    ssize_t remaining = sizeof(request);
+    const char *buffer = (const char *)&request;
 
     while (remaining > 0) {
         ssize_t written = write(fd, buffer, remaining);
         if (written < 0) {
-            // Manejo de errores durante la escritura
             printf("[ERROR] Error sending exit request.\n");
             break;
         }
@@ -227,10 +209,9 @@ void commExit(const char *user_fifo) {
         remaining -= written; // Reducir los bytes restantes
     }
 
-    // Cerrar el pipe después de escribir
     close(fd);
 
-    // Eliminar el FIFO del usuario
+    // Eliminar el pipe del usuario
     if (unlink(user_fifo) == 0) {
         printf("User pipe for the session has been removed successfully.\n");
     } else {
@@ -241,10 +222,7 @@ void commExit(const char *user_fifo) {
     exit(1);
 }
 
-
-
 int main(int argc, char *argv[]) {
-
     if (argc != 2) {
         printf("[ERROR] Invalid number of arguments.\n");
         printf("Format: %s <username>\n", argv[0]);
@@ -265,7 +243,7 @@ int main(int argc, char *argv[]) {
     printf("Enter the command you want to execute: \n");
 
     // Enviar datos del usuario al manager
-    if (!enviaUser(username,user_fifo)) {
+    if (!sendUser(username, user_fifo)) {
         unlink(user_fifo);
         return 1;
     }
@@ -278,24 +256,22 @@ int main(int argc, char *argv[]) {
     }
 
     char input[256];
-    msgStruct msg;
+    Message msg;
 
     while (1) { 
-
         // Inicializar el conjunto de descriptores para `select`
         fd_set read_fds;
         FD_ZERO(&read_fds);
-        FD_SET(0, &read_fds); // Entrada estandar
+        FD_SET(0, &read_fds); // Entrada estándar
         FD_SET(fd_feed, &read_fds); // Añadir pipe del usuario
 
         int max_fd = fd_feed > 0 ? fd_feed : 0;
         if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) == -1) {
-            printf("[ERROR] Select failed.\n");
+            perror("[ERROR] Select failed.\n");
             break;
         }
 
         if (FD_ISSET(0, &read_fds)) {
-
             fgets(input, sizeof(input), stdin);
             input[strcspn(input, "\n")] = 0;
 
@@ -303,52 +279,45 @@ int main(int argc, char *argv[]) {
             sscanf(input, "%s", command);
 
             switch (command[0]) {
-                /*case 't':
-                    if (strcmp(command, "topics") == 0) {
-                        commTopicos(FEED_PIPE);
-                    } else {
-                        printf("[ERROR] Unknown command!\n");
-                    }
-                    break; -> No funciona correctamente revisar. */
                 case 's':
                     if (strncmp(command, "subscribe", 9) == 0) {
-                        char topico[20];
-                        sscanf(input + 10, "%s", topico);
-                        commSubscribe(topico);
+                        char topic[MAX_TOPIC_LENGTH];
+                        sscanf(input + 10, "%s", topic);
+                        subscribe(topic);
                     } else {
-                        printf("[ERROR] Unknown command!\n");
+                        printf("[ERROR] Unknown command! Did you mean subscribe?\n");
                     }
                     break;
                 case 'u':
                     if (strncmp(command, "unsubscribe", 11) == 0) {
-                        char topico[20];
-                        sscanf(input + 12, "%s", topico);
-                        commUnsubscribe(topico);
+                        char topic[MAX_TOPIC_LENGTH];
+                        sscanf(input + 12, "%s", topic);
+                        unsubscribe(topic);
                     } else {
-                        printf("[ERROR] Unknown command!\n");
+                        printf("[ERROR] Unknown command! Did you mean unsubscribe?\n");
                     }
                     break;
                 case 'm':
                     if (strncmp(command, "msg", 3) == 0) {
-                        char topico[20];
-                        int duracao;
-                        char menssagem[300];
-                        sscanf(input + 4, "%s %d %[^\n]", topico, &duracao, menssagem);
-                        commMsg(topico, duracao, menssagem, username);
+                        char topic[MAX_TOPIC_LENGTH];
+                        int duration;
+                        char message[MAX_MSG_SIZE];
+                        sscanf(input + 4, "%s %d %[^\n]", topic, &duration, message);
+                        sendMessage(topic, duration, message, username);
                     } else {
-                        printf("[ERROR] Unknown command!\n");
+                        printf("[ERROR] Unknown command! Did you mean msg? \n");
                     }
                     break;
                 case 'e':
                     if (strcmp(command, "exit") == 0) {
-                        commExit(user_fifo);
+                        endSession(user_fifo);
                         break;
                     } else {
-                        printf("[ERROR] Unknown command!\n");
+                        printf("[ERROR] Unknown command! Did you mean exit?\n");
                     }
                     break;
                 default:
-                    printf("[ERROR] Unknown command!\n");
+                    printf("[ERROR] Unknown command!Valid commands are: subscribe, unsubscribe, msg, exit. \n");
                     break;
             }
         }
@@ -357,20 +326,19 @@ int main(int argc, char *argv[]) {
             int size = read(fd_feed, &msg, sizeof(msg));
             if (size > 0)
             {
-                if(msg.fechado == 1) {
+                if (msg.closed == 1) {
                     printf("Manager terminated!! Exiting...\n");
                     fflush(stdout);
                     unlink(user_fifo);
                     break;
                 }
-                if(msg.bloqueado == 1) {
-                    printf("%s" , msg.menssagem);
+                if (msg.blocked == 1) {
+                    printf("%s", msg.message);
                     fflush(stdout);
                 } else {
-                    printf("<%s> %s - %s \n" , msg.topico , msg.nome , msg.menssagem);
+                    printf("<%s> %s - %s \n", msg.topic, msg.name, msg.message);
                     fflush(stdout);
                 }
-
             }
         }
     }
