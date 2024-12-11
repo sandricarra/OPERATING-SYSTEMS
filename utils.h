@@ -16,7 +16,8 @@
 #include <sys/select.h>
 
 
-#define MAN_FIFO "managerFIFO"
+#define MAN_PIPE "manager_pipe"
+#define FEED_PIPE "user_pipe_%d"
 #define MAX_CLIENTES 10
 #define MAX_TOPICOS 20
 #define MAX_MENSSAGENS 5
