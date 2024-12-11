@@ -9,9 +9,54 @@ int contMenssagens = 0;
 topico topicosLista[MAX_TOPICOS];
 int contTopicos = 0;
 
-
-
 void commFecha() {
+    msgStruct termina;
+    termina.fechado = 1;
+
+    // Recorrer todos los clientes conectados
+    for (int i = 0; i < contCliente; i++) {
+        if (access(clientesLista[i].FIFO, F_OK) != 0) {
+            printf("[ERROR] User pipe %d (FIFO: %s) does not exist!\n", clientesLista[i].pid, clientesLista[i].FIFO);
+            continue;
+        }
+
+        int fd = open(clientesLista[i].FIFO, O_WRONLY);
+        
+        // Verificar si no se pudo abrir el FIFO del cliente
+        if (fd == -1) {
+            perror("open");
+            printf("[ERROR] Failed to open user pipe %d (FIFO: %s)!\n", clientesLista[i].pid, clientesLista[i].FIFO);
+            continue;
+        }
+
+        // Enviar el mensaje de desconexión al cliente
+        if (write(fd, &termina, sizeof(termina)) == -1) {
+            perror("write");
+            printf("[ERROR] Failed to send disconnection request to user %d!\n", clientesLista[i].pid);
+        }
+
+        // Cerrar el descriptor del archivo
+        close(fd);
+    }
+
+    // Resetear el contador de clientes después de desconectarlos
+    contCliente = 0;
+    printf("All clients have been disconnected.\n");
+
+    // Eliminar el manager pipe
+    if (unlink(MAN_PIPE) == -1) {
+        perror("unlink");
+        printf("[ERROR] Failed to remove manager pipe.\n");
+    } else {
+        printf("Manager pipe removed successfully.\n");
+    }
+
+    printf("Session ended.\n");
+    exit(0);
+}
+
+
+/*void commFecha() {
     msgStruct termina;
     termina.fechado = 1;
 
@@ -38,14 +83,14 @@ void commFecha() {
     contCliente = 0;
     printf("All clients have been disconnected.\n");
 
-    // Eliminar el FIFO utilizado por el manager
-    if (unlink(MAN_FIFO) == -1) {
+    // Eliminar el manager pipe
+    if (unlink(MAN_PIPE) == -1) {
         printf("[ERROR] Failed to remove manager pipe.\n");
     }
     printf("Session ended.\n");
 
     exit(0);
-}
+}*/
 
 
 void enviaMenssagensPersistentes(cliente *client, char *topico) {
@@ -407,7 +452,7 @@ void handleTipo2(pedidoStruct *pedido) {
     } else {
         if (contCliente < MAX_CLIENTES) {
             clientesLista[contCliente].pid = pedido->pid;
-            snprintf(clientesLista[contCliente].FIFO, sizeof(clientesLista[contCliente].FIFO), "/tmp/client_fifo_%d", pedido->pid);
+            snprintf(clientesLista[contCliente].FIFO, sizeof(clientesLista[contCliente].FIFO), FEED_PIPE, pedido->pid);
             strncpy(clientesLista[contCliente].nome, pedido->username, sizeof(clientesLista[contCliente].nome) - 1);
             clientesLista[contCliente].nome[sizeof(clientesLista[contCliente].nome) - 1] = '\0';
             clientesLista[contCliente].numTopicos = 0;
@@ -452,7 +497,7 @@ void handleTipo3(pedidoStruct *pedido) {
 
 void *threadRecebeMenssagens(void *dados) {
     TDADOS *pdados = (TDADOS *)dados;
-    int fd = open(MAN_FIFO, O_RDWR);
+    int fd = open(MAN_PIPE, O_RDWR);
 
     if (fd == -1) {
         printf("\n[ERROR] Failed to open manager pipe.\n");
@@ -494,7 +539,7 @@ void *threadRecebeMenssagens(void *dados) {
         } else if (size == 0) {
             // Reopen FIFO if needed
             close(fd);
-            fd = open(MAN_FIFO, O_RDONLY);
+            fd = open(MAN_PIPE, O_RDONLY);
             if (fd == -1) {
                 printf("[ERROR] Failed to reopen manager pipe.\n");
                 pthread_mutex_unlock(pdados->m);
@@ -535,15 +580,10 @@ int main(int argc, char *argv[]) {
     }
 
     // Creación del user pipe
-    if (mkfifo(MAN_FIFO, 0666) == -1) {
+    if (mkfifo(MAN_PIPE, 0666) == -1) {
         if (errno == EEXIST) {
-            printf("[ERROR] Manager pipe already exits! Deleting manager pipe.\n");
-            unlink(MAN_FIFO);
-        }
-        
-        if (mkfifo(MAN_FIFO, 0666) == -1) {
-            printf("[ERROR] Failed to create manager pipe. \n");
-            return 1;
+            printf("[ERROR] Manager pipe already exits! Cannot proceed.\n");
+            return 1; // Salimos del programa si ya existe
         }
     }
 
@@ -615,6 +655,6 @@ int main(int argc, char *argv[]) {
 
      // Destruye mutex y cierra manager pipe
     pthread_mutex_destroy(&mutex);
-    unlink(MAN_FIFO);
+    unlink(MAN_PIPE);
     return 0;
 }
