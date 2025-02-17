@@ -44,7 +44,6 @@ This project implements a platform for sending and receiving short messages orga
 | Command                              | Description                                                                          |
 | ------------------------------------ | ------------------------------------------------------------------------------------ |
 | `./feed <username>`                 | Starts the user program with the specified name.                                    |
-| `topics`                             | Lists available topics and their details.                                           |
 | `msg <topic> <duration> <message>`   | Sends a message to a topic with a defined duration (0 for non-persistent).          |
 | `subscribe <topic>`                  | Subscribes to a topic and receives its messages.                                    |
 | `unsubscribe <topic>`                | Unsubscribes from a topic.                                                          |
@@ -56,10 +55,10 @@ This project implements a platform for sending and receiving short messages orga
 | ----------------- | --------------------------------------------------------- |
 | `list_users`      | Displays the list of active users.                        |
 | `list_topics`     | Lists existing topics and their status.                   |
-| `kick <username>` | Removes a user from the platform.                         |
+| `remove <username>` | Removes a user from the platform.                         |
 | `block <topic>`   | Blocks a topic (new messages cannot be sent).             |
 | `unblock <topic>` | Unblocks a topic.                                         |
-| `shutdown`        | Shuts down the manager, saving persistent messages.       |
+| `close`        | Shuts down the manager, saving persistent messages.       |
 
 ## Persistent Message Storage
 
@@ -70,8 +69,8 @@ This project implements a platform for sending and receiving short messages orga
   ```
 - Example:
   ```
-  football sr_silva 110 that game for the league was very strange
-  snacks mario 99 does anyone know where to buy cheap bifanas?
+  soccer sr_silva 110 that league game was really weird 
+mario 99 snacks does anyone know where to buy cheap bifanas? 
   ```
 
 ## Final Considerations
